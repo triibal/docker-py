@@ -82,3 +82,8 @@ class TLSParameterError(DockerException):
 
 class NullResource(DockerException, ValueError):
     pass
+
+
+class ContextError(DockerException):
+    def __init__(self, msg):
+        self.message = msg
