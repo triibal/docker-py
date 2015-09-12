@@ -224,11 +224,22 @@ class TestCreateContainerWithBinds(BaseTestCase):
             logs = logs.decode('utf-8')
         self.assertIn(filename, logs)
         inspect_data = self.client.inspect_container(container_id)
-        self.assertIn('Volumes', inspect_data)
-        self.assertIn(mount_dest, inspect_data['Volumes'])
-        self.assertEqual(mount_origin, inspect_data['Volumes'][mount_dest])
-        self.assertIn(mount_dest, inspect_data['VolumesRW'])
-        self.assertTrue(inspect_data['VolumesRW'][mount_dest])
+        if docker.utils.compare_version('1.20', self.client._version) < 0:
+            self.assertIn('Volumes', inspect_data)
+            self.assertIn(mount_dest, inspect_data['Volumes'])
+            self.assertEqual(mount_origin, inspect_data['Volumes'][mount_dest])
+            self.assertIn(mount_dest, inspect_data['VolumesRW'])
+            self.assertTrue(inspect_data['VolumesRW'][mount_dest])
+        else:
+            self.assertIn('Mounts', inspect_data)
+            filtered = filter(
+                lambda x: x['Destination'] == mount_dest,
+                inspect_data['Mounts']
+            )
+            self.assertEqual(len(filtered), 1)
+            mount_data = filtered[0]
+            self.assertEqual(mount_data['Source'], mount_origin)
+            self.assertTrue(mount_data['RW'])
 
 
 class TestCreateContainerWithRoBinds(BaseTestCase):
@@ -266,11 +277,22 @@ class TestCreateContainerWithRoBinds(BaseTestCase):
             logs = logs.decode('utf-8')
         self.assertIn(filename, logs)
         inspect_data = self.client.inspect_container(container_id)
-        self.assertIn('Volumes', inspect_data)
-        self.assertIn(mount_dest, inspect_data['Volumes'])
-        self.assertEqual(mount_origin, inspect_data['Volumes'][mount_dest])
-        self.assertIn(mount_dest, inspect_data['VolumesRW'])
-        self.assertFalse(inspect_data['VolumesRW'][mount_dest])
+        if docker.utils.compare_version('1.20', self.client._version) < 0:
+            self.assertIn('Volumes', inspect_data)
+            self.assertIn(mount_dest, inspect_data['Volumes'])
+            self.assertEqual(mount_origin, inspect_data['Volumes'][mount_dest])
+            self.assertIn(mount_dest, inspect_data['VolumesRW'])
+            self.assertFalse(inspect_data['VolumesRW'][mount_dest])
+        else:
+            self.assertIn('Mounts', inspect_data)
+            filtered = filter(
+                lambda x: x['Destination'] == mount_dest,
+                inspect_data['Mounts']
+            )
+            self.assertEqual(len(filtered), 1)
+            mount_data = filtered[0]
+            self.assertEqual(mount_data['Source'], mount_origin)
+            self.assertFalse(mount_data['RW'])
 
 
 class CreateContainerWithLogConfigTest(BaseTestCase):
