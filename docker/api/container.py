@@ -1,8 +1,10 @@
 import six
 import warnings
+from datetime import datetime
 
 from .. import errors
 from .. import utils
+from ..utils.utils import create_networking_config, create_endpoint_config
 
 
 class ContainerApiMixin(object):
@@ -38,13 +40,14 @@ class ContainerApiMixin(object):
 
     @utils.check_resource
     def commit(self, container, repository=None, tag=None, message=None,
-               author=None, conf=None):
+               author=None, changes=None, conf=None):
         params = {
             'container': container,
             'repo': repository,
             'tag': tag,
             'comment': message,
-            'author': author
+            'author': author,
+            'changes': changes
         }
         u = self._url("/commit")
         return self._result(self._post_json(u, data=conf, params=params),
@@ -75,6 +78,12 @@ class ContainerApiMixin(object):
 
     @utils.check_resource
     def copy(self, container, resource):
+        if utils.version_gte(self._version, '1.20'):
+            warnings.warn(
+                'Client.copy() is deprecated for API version >= 1.20, '
+                'please use get_archive() instead',
+                DeprecationWarning
+            )
         res = self._post_json(
             self._url("/containers/{0}/copy".format(container)),
             data={"Resource": resource},
@@ -90,7 +99,8 @@ class ContainerApiMixin(object):
                          network_disabled=False, name=None, entrypoint=None,
                          cpu_shares=None, working_dir=None, domainname=None,
                          memswap_limit=None, cpuset=None, host_config=None,
-                         mac_address=None, labels=None, volume_driver=None):
+                         mac_address=None, labels=None, volume_driver=None,
+                         stop_signal=None, networking_config=None):
 
         if isinstance(volumes, six.string_types):
             volumes = [volumes, ]
@@ -105,7 +115,7 @@ class ContainerApiMixin(object):
             tty, mem_limit, ports, environment, dns, volumes, volumes_from,
             network_disabled, entrypoint, cpu_shares, working_dir, domainname,
             memswap_limit, cpuset, host_config, mac_address, labels,
-            volume_driver
+            volume_driver, stop_signal, networking_config,
         )
         return self.create_container_from_config(config, name)
 
@@ -131,6 +141,12 @@ class ContainerApiMixin(object):
         kwargs['version'] = self._version
         return utils.create_host_config(*args, **kwargs)
 
+    def create_networking_config(self, *args, **kwargs):
+        return create_networking_config(*args, **kwargs)
+
+    def create_endpoint_config(self, *args, **kwargs):
+        return create_endpoint_config(self._version, *args, **kwargs)
+
     @utils.check_resource
     def diff(self, container):
         return self._result(
@@ -144,6 +160,21 @@ class ContainerApiMixin(object):
         )
         self._raise_for_status(res)
         return res.raw
+
+    @utils.check_resource
+    @utils.minimum_version('1.20')
+    def get_archive(self, container, path):
+        params = {
+            'path': path
+        }
+        url = self._url('/containers/{0}/archive', container)
+        res = self._get(url, params=params, stream=True)
+        self._raise_for_status(res)
+        encoded_stat = res.headers.get('x-docker-container-path-stat')
+        return (
+            res.raw,
+            utils.decode_json_header(encoded_stat) if encoded_stat else None
+        )
 
     @utils.check_resource
     def inspect_container(self, container):
@@ -163,17 +194,30 @@ class ContainerApiMixin(object):
 
     @utils.check_resource
     def logs(self, container, stdout=True, stderr=True, stream=False,
-             timestamps=False, tail='all'):
+             timestamps=False, tail='all', since=None, follow=None):
         if utils.compare_version('1.11', self._version) >= 0:
+            if follow is None:
+                follow = stream
             params = {'stderr': stderr and 1 or 0,
                       'stdout': stdout and 1 or 0,
                       'timestamps': timestamps and 1 or 0,
-                      'follow': stream and 1 or 0,
+                      'follow': follow and 1 or 0,
                       }
             if utils.compare_version('1.13', self._version) >= 0:
-                if tail != 'all' and (not isinstance(tail, int) or tail <= 0):
+                if tail != 'all' and (not isinstance(tail, int) or tail < 0):
                     tail = 'all'
                 params['tail'] = tail
+
+            if since is not None:
+                if utils.compare_version('1.19', self._version) < 0:
+                    raise errors.InvalidVersion(
+                        'since is not supported in API < 1.19'
+                    )
+                else:
+                    if isinstance(since, datetime):
+                        params['since'] = utils.datetime_to_timestamp(since)
+                    elif (isinstance(since, int) and since > 0):
+                        params['since'] = since
             url = self._url("/containers/{0}/logs", container)
             res = self._get(url, params=params, stream=stream)
             return self._get_result(container, stream, res)
@@ -196,7 +240,7 @@ class ContainerApiMixin(object):
         res = self._get(self._url("/containers/{0}/json", container))
         self._raise_for_status(res)
         json_ = res.json()
-        s_port = str(private_port)
+        private_port = str(private_port)
         h_ports = None
 
         # Port settings is None when the container is running with
@@ -205,11 +249,23 @@ class ContainerApiMixin(object):
         if port_settings is None:
             return None
 
-        h_ports = port_settings.get(s_port + '/udp')
+        if '/' in private_port:
+            return port_settings.get(private_port)
+
+        h_ports = port_settings.get(private_port + '/tcp')
         if h_ports is None:
-            h_ports = port_settings.get(s_port + '/tcp')
+            h_ports = port_settings.get(private_port + '/udp')
 
         return h_ports
+
+    @utils.check_resource
+    @utils.minimum_version('1.20')
+    def put_archive(self, container, path, data):
+        params = {'path': path}
+        url = self._url('/containers/{0}/archive', container)
+        res = self._put(url, params=params, data=data)
+        self._raise_for_status(res)
+        return res.status_code == 200
 
     @utils.check_resource
     def remove_container(self, container, v=False, link=False, force=False):
@@ -311,9 +367,14 @@ class ContainerApiMixin(object):
 
     @utils.minimum_version('1.17')
     @utils.check_resource
-    def stats(self, container, decode=None):
+    def stats(self, container, decode=None, stream=True):
         url = self._url("/containers/{0}/stats", container)
-        return self._stream_helper(self._get(url, stream=True), decode=decode)
+        if stream:
+            return self._stream_helper(self._get(url, stream=True),
+                                       decode=decode)
+        else:
+            return self._result(self._get(url, params={'stream': False}),
+                                json=True)
 
     @utils.check_resource
     def stop(self, container, timeout=10):
@@ -325,15 +386,51 @@ class ContainerApiMixin(object):
         self._raise_for_status(res)
 
     @utils.check_resource
-    def top(self, container):
+    def top(self, container, ps_args=None):
         u = self._url("/containers/{0}/top", container)
-        return self._result(self._get(u), True)
+        params = {}
+        if ps_args is not None:
+            params['ps_args'] = ps_args
+        return self._result(self._get(u, params=params), True)
 
     @utils.check_resource
     def unpause(self, container):
         url = self._url('/containers/{0}/unpause', container)
         res = self._post(url)
         self._raise_for_status(res)
+
+    @utils.minimum_version('1.22')
+    @utils.check_resource
+    def update_container(
+        self, container, blkio_weight=None, cpu_period=None, cpu_quota=None,
+        cpu_shares=None, cpuset_cpus=None, cpuset_mems=None, mem_limit=None,
+        mem_reservation=None, memswap_limit=None, kernel_memory=None
+    ):
+        url = self._url('/containers/{0}/update', container)
+        data = {}
+        if blkio_weight:
+            data['BlkioWeight'] = blkio_weight
+        if cpu_period:
+            data['CpuPeriod'] = cpu_period
+        if cpu_shares:
+            data['CpuShares'] = cpu_shares
+        if cpu_quota:
+            data['CpuQuota'] = cpu_quota
+        if cpuset_cpus:
+            data['CpusetCpus'] = cpuset_cpus
+        if cpuset_mems:
+            data['CpusetMems'] = cpuset_mems
+        if mem_limit:
+            data['Memory'] = utils.parse_bytes(mem_limit)
+        if mem_reservation:
+            data['MemoryReservation'] = utils.parse_bytes(mem_reservation)
+        if memswap_limit:
+            data['MemorySwap'] = utils.parse_bytes(memswap_limit)
+        if kernel_memory:
+            data['KernelMemory'] = utils.parse_bytes(kernel_memory)
+
+        res = self._post_json(url, data=data)
+        return self._result(res, True)
 
     @utils.check_resource
     def wait(self, container, timeout=None):

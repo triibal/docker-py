@@ -1,6 +1,190 @@
 Change Log
 ==========
 
+1.8.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.8.0+is%3Aclosed)
+
+### Features
+
+* Added `Client.update_container` method (Update resource configs of a
+  container)
+* Added support for gzipped context in `Client.build`
+* Added ability to specify IP address when connecting a container to a
+  network
+* Added `tmpfs` support to `Client.create_host_config`
+* Added support for the `changes` param in `Client.commit`
+* Added support for the `follow` param in `Client.logs`
+* Added support for the `check_duplicate` param in `Client.create_network`
+* Added support for the `decode` param in `Client.push` and `Client.pull`
+* Added `docker.from_env` shortcut function. Instantiates a client with
+  `kwargs_from_env`
+* `kwargs_from_env` now supports an optional `environment` parameter.
+  If present, values will be fetched from this dictionary instead of
+  `os.environ`
+
+
+### Bugfixes
+
+* Fixed a bug where TLS verification would fail when using IP addresses
+  in the certificate's `subjectAltName` fields
+* Fixed an issue where the default TLS version in TLSConfig would
+  break in some environments. `docker-py` now uses TLSv1 by default
+  This setting can be overridden using the `ssl_version` param in
+  `kwargs_from_env` or the `TLSConfig` constructor
+* Fixed a bug where `tcp` hosts would fail to connect to TLS-enabled
+  endpoints
+* Fixed a bug where loading a valid docker configuration file would fail
+* Fixed a bug where some environment variables specified through
+  `create_container` would be improperly formatted
+* Fixed a bug where using the unix socket connection would raise
+  an error in some edge-case situations
+
+### Miscellaneous
+
+* Default API version is now 1.22 (introduced in Docker 1.10.0)
+
+
+1.7.2
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.7.2+is%3Aclosed)
+
+### Bugfixes
+
+* Fixed a bug where TLS verification was improperly executed when providing
+  a custom CA certificate.
+
+1.7.1
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.7.1+is%3Aclosed)
+
+### Features
+
+* Added support for `shm_size` in `Client.create_host_config`
+
+### Bugfixes
+
+* Fixed a bug where Dockerfile would sometimes be excluded from the build
+  context.
+* Fixed a bug where a docker config file containing unknown keys would raise
+  an exception.
+* Fixed an issue with SSL connections behaving improperly when pyOpenSSL
+  was installed in the same environment.
+* Several TLS configuration improvements
+
+
+1.7.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.7.0+is%3Aclosed)
+
+### Features
+
+* Added support for cusom IPAM configuration in `Client.create_network`
+* Added input support to `Client.exec_create`
+* Added support for `stop_signal` in `Client.create_host_config`
+* Added support for custom HTTP headers in Docker config file.
+* Added support for unspecified transfer protocol in `base_url` when TLS is
+  enabled.
+
+
+### Bugfixes
+
+* Fixed a bug where the `filters` parameter in `Client.volumes` would not be
+  applied properly.
+* Fixed a bug where memory limits would parse to incorrect values.
+* Fixed a bug where the `devices` parameter in `Client.create_host_config`
+  would sometimes be misinterpreted.
+* Fixed a bug where instantiating a `Client` object would sometimes crash if
+  `base_url` was unspecified.
+* Fixed a bug where an error message related to TLS configuration would link
+  to a non-existent (outdated) docs page.
+
+
+### Miscellaneous
+
+* Processing of `.dockerignore` has been made significantly faster.
+* Dropped explicit support for Python 3.2
+
+1.6.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.6.0+is%3Aclosed)
+
+### Features
+
+* Added support for the `since` param in `Client.logs` (introduced in API
+  version 1.19)
+* Added support for the `DOCKER_CONFIG` environment variable when looking up
+  auth config
+* Added support for the `stream` param in `Client.stats` (when set to `False`,
+  allows user to retrieve a single snapshot instead of a constant data stream)
+* Added support for the `mem_swappiness`, `oom_kill_disable` params
+  in `Client.create_host_config`
+* Added support for build arguments in `Client.build` through the `buildargs`
+  param.
+
+
+### Bugfixes
+
+* Fixed a bug where streaming data over HTTPS would sometimes behave
+  incorrectly with Python 3.x
+* Fixed a bug where commands containing unicode characters would be incorrectly
+  handled by `Client.create_container`.
+* Fixed a bug where auth config credentials containing unicode characters would
+  cause failures when pushing / pulling images.
+* Setting `tail=0` in `Client.logs` no longer shows past logs.
+* Fixed a bug where `Client.pull` and `Client.push` couldn't handle image names
+  containing a dot.
+
+
+### Miscellaneous
+
+* Default API version is now 1.21 (introduced in Docker 1.9.0)
+* Several test improvements and cleanup that should make the suite easier to
+  expand and maintain moving forward.
+
+
+1.5.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/issues?q=milestone%3A1.5.0+is%3Aclosed)
+
+### Features
+
+* Added support for the networking API introduced in Docker 1.9.0
+  (`Client.networks`, `Client.create_network`, `Client.remove_network`,
+  `Client.inspect_network`, `Client.connect_container_to_network`,
+  `Client.disconnect_container_from_network`).
+* Added support for the volumes API introduced in Docker 1.9.0
+  (`Client.volumes`, `Client.create_volume`, `Client.inspect_volume`,
+  `Client.remove_volume`).
+* Added support for the `group_add` parameter in `create_host_config`.
+* Added support for the CPU CFS (`cpu_quota` and `cpu_period`) parameteres
+  in `create_host_config`.
+* Added support for the archive API endpoint (`Client.get_archive`,
+  `Client.put_archive`).
+* Added support for `ps_args` parameter in `Client.top`.
+
+
+### Bugfixes
+
+* Fixed a bug where specifying volume binds with unicode characters would
+  fail.
+* Fixed a bug where providing an explicit protocol in `Client.port` would fail
+  to yield the expected result.
+* Fixed a bug where the priority protocol returned by `Client.port` would be UDP
+  instead of the expected TCP.
+
+### Miscellaneous
+
+* Broke up Client code into several files to facilitate maintenance and
+  contribution.
+* Added contributing guidelines to the repository.
+
 1.4.0
 -----
 

@@ -148,7 +148,7 @@ class ImageApiMixin(object):
         self._raise_for_status(res)
 
     def pull(self, repository, tag=None, stream=False,
-             insecure_registry=False, auth_config=None):
+             insecure_registry=False, auth_config=None, decode=False):
         if insecure_registry:
             warnings.warn(
                 INSECURE_REGISTRY_DEPRECATION_WARNING.format('pull()'),
@@ -158,8 +158,6 @@ class ImageApiMixin(object):
         if not tag:
             repository, tag = utils.parse_repository_tag(repository)
         registry, repo_name = auth.resolve_repository_name(repository)
-        if repo_name.count(":") == 1:
-            repository, tag = repository.rsplit(":", 1)
 
         params = {
             'tag': tag,
@@ -174,7 +172,8 @@ class ImageApiMixin(object):
                 log.debug('Looking for auth config')
                 if not self._auth_configs:
                     log.debug(
-                        "No auth config in memory - loading from filesystem")
+                        "No auth config in memory - loading from filesystem"
+                    )
                     self._auth_configs = auth.load_config()
                 authcfg = auth.resolve_authconfig(self._auth_configs, registry)
                 # Do not fail here if no authentication exists for this
@@ -201,12 +200,12 @@ class ImageApiMixin(object):
         self._raise_for_status(response)
 
         if stream:
-            return self._stream_helper(response)
+            return self._stream_helper(response, decode=decode)
 
         return self._result(response)
 
     def push(self, repository, tag=None, stream=False,
-             insecure_registry=False):
+             insecure_registry=False, decode=False):
         if insecure_registry:
             warnings.warn(
                 INSECURE_REGISTRY_DEPRECATION_WARNING.format('push()'),
@@ -242,7 +241,7 @@ class ImageApiMixin(object):
         self._raise_for_status(response)
 
         if stream:
-            return self._stream_helper(response)
+            return self._stream_helper(response, decode=decode)
 
         return self._result(response)
 

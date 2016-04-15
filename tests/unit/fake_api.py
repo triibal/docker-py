@@ -383,6 +383,33 @@ def get_fake_stats():
     return status_code, response
 
 
+def get_fake_top():
+    return 200, {
+        'Processes': [
+            [
+                'root',
+                '26501',
+                '6907',
+                '0',
+                '10:32',
+                'pts/55',
+                '00:00:00',
+                'sleep 60',
+            ],
+        ],
+        'Titles': [
+            'UID',
+            'PID',
+            'PPID',
+            'C',
+            'STIME',
+            'TTY',
+            'TIME',
+            'CMD',
+        ],
+    }
+
+
 def get_fake_volume_list():
     status_code = 200
     response = {
@@ -413,6 +440,11 @@ def get_fake_volume():
 
 def fake_remove_volume():
     return 204, None
+
+
+def post_fake_update_container():
+    return 200, {'Warnings': []}
+
 
 # Maps real api url to fake response callback
 prefix = 'http+docker://localunixsocket'
@@ -451,6 +483,8 @@ fake_responses = {
     get_fake_diff,
     '{1}/{0}/containers/3cc2351ab11b/export'.format(CURRENT_VERSION, prefix):
     get_fake_export,
+    '{1}/{0}/containers/3cc2351ab11b/update'.format(CURRENT_VERSION, prefix):
+    post_fake_update_container,
     '{1}/{0}/containers/3cc2351ab11b/exec'.format(CURRENT_VERSION, prefix):
     post_fake_exec_create,
     '{1}/{0}/exec/d5d177f121dc/start'.format(CURRENT_VERSION, prefix):
@@ -462,6 +496,8 @@ fake_responses = {
 
     '{1}/{0}/containers/3cc2351ab11b/stats'.format(CURRENT_VERSION, prefix):
     get_fake_stats,
+    '{1}/{0}/containers/3cc2351ab11b/top'.format(CURRENT_VERSION, prefix):
+    get_fake_top,
     '{1}/{0}/containers/3cc2351ab11b/stop'.format(CURRENT_VERSION, prefix):
     post_fake_stop_container,
     '{1}/{0}/containers/3cc2351ab11b/kill'.format(CURRENT_VERSION, prefix):
@@ -500,7 +536,7 @@ fake_responses = {
     get_fake_events,
     ('{1}/{0}/volumes'.format(CURRENT_VERSION, prefix), 'GET'):
     get_fake_volume_list,
-    ('{1}/{0}/volumes'.format(CURRENT_VERSION, prefix), 'POST'):
+    ('{1}/{0}/volumes/create'.format(CURRENT_VERSION, prefix), 'POST'):
     get_fake_volume,
     ('{1}/{0}/volumes/{2}'.format(
         CURRENT_VERSION, prefix, FAKE_VOLUME_NAME

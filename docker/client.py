@@ -28,8 +28,12 @@ from . import errors
 from .auth import auth
 from .unixconn import unixconn
 from .ssladapter import ssladapter
-from .utils import utils, check_resource
+from .utils import utils, check_resource, update_headers, kwargs_from_env
 from .tls import TLSConfig
+
+
+def from_env(**kwargs):
+    return Client.from_env(**kwargs)
 
 
 class Client(
@@ -39,22 +43,23 @@ class Client(
         api.DaemonApiMixin,
         api.ExecApiMixin,
         api.ImageApiMixin,
-        api.VolumeApiMixin):
+        api.VolumeApiMixin,
+        api.NetworkApiMixin):
     def __init__(self, base_url=None, version=None,
                  timeout=constants.DEFAULT_TIMEOUT_SECONDS, tls=False):
         super(Client, self).__init__()
 
-        if tls and not base_url.startswith('https://'):
+        if tls and not base_url:
             raise errors.TLSParameterError(
-                'If using TLS, the base_url argument must begin with '
-                '"https://".')
+                'If using TLS, the base_url argument must be provided.'
+            )
 
         self.base_url = base_url
         self.timeout = timeout
 
         self._auth_configs = auth.load_config()
 
-        base_url = utils.parse_host(base_url, sys.platform)
+        base_url = utils.parse_host(base_url, sys.platform, tls=bool(tls))
         if base_url.startswith('http+unix://'):
             self._custom_adapter = unixconn.UnixAdapter(base_url, timeout)
             self.mount('http+docker://', self._custom_adapter)
@@ -83,6 +88,10 @@ class Client(
                 )
             )
 
+    @classmethod
+    def from_env(cls, **kwargs):
+        return cls(**kwargs_from_env(**kwargs))
+
     def _retrieve_server_version(self):
         try:
             return self.version(api_version=False)["ApiVersion"]
@@ -102,30 +111,38 @@ class Client(
         kwargs.setdefault('timeout', self.timeout)
         return kwargs
 
+    @update_headers
     def _post(self, url, **kwargs):
         return self.post(url, **self._set_request_timeout(kwargs))
 
+    @update_headers
     def _get(self, url, **kwargs):
         return self.get(url, **self._set_request_timeout(kwargs))
 
+    @update_headers
+    def _put(self, url, **kwargs):
+        return self.put(url, **self._set_request_timeout(kwargs))
+
+    @update_headers
     def _delete(self, url, **kwargs):
         return self.delete(url, **self._set_request_timeout(kwargs))
 
-    def _url(self, pathfmt, resource_id=None, versioned_api=True):
-        if resource_id and not isinstance(resource_id, six.string_types):
-            raise ValueError(
-                'Expected a resource ID string but found {0} ({1}) '
-                'instead'.format(resource_id, type(resource_id))
-            )
-        elif resource_id:
-            resource_id = six.moves.urllib.parse.quote_plus(resource_id)
+    def _url(self, pathfmt, *args, **kwargs):
+        for arg in args:
+            if not isinstance(arg, six.string_types):
+                raise ValueError(
+                    'Expected a string but found {0} ({1}) '
+                    'instead'.format(arg, type(arg))
+                )
 
-        if versioned_api:
+        args = map(six.moves.urllib.parse.quote_plus, args)
+
+        if kwargs.get('versioned_api', True):
             return '{0}/v{1}{2}'.format(
-                self.base_url, self._version, pathfmt.format(resource_id)
+                self.base_url, self._version, pathfmt.format(*args)
             )
         else:
-            return '{0}{1}'.format(self.base_url, pathfmt.format(resource_id))
+            return '{0}{1}'.format(self.base_url, pathfmt.format(*args))
 
     def _raise_for_status(self, response, explanation=None):
         """Raises stored :class:`APIError`, if one occurred."""
@@ -183,6 +200,8 @@ class Client(
         self._raise_for_status(response)
         if six.PY3:
             sock = response.raw._fp.fp.raw
+            if self.base_url.startswith("https://"):
+                sock = sock._sock
         else:
             sock = response.raw._fp.fp._sock
         try:
@@ -239,10 +258,7 @@ class Client(
         # Disable timeout on the underlying socket to prevent
         # Read timed out(s) for long running processes
         socket = self._get_raw_response_socket(response)
-        if six.PY3:
-            socket._sock.settimeout(None)
-        else:
-            socket.settimeout(None)
+        self._disable_socket_timeout(socket)
 
         while True:
             header = response.raw.read(constants.STREAM_HEADER_SIZE_BYTES)
@@ -270,6 +286,19 @@ class Client(
         self._raise_for_status(response)
         for out in response.iter_content(chunk_size=1, decode_unicode=True):
             yield out
+
+    def _disable_socket_timeout(self, socket):
+        """ Depending on the combination of python version and whether we're
+        connecting over http or https, we might need to access _sock, which
+        may or may not exist; or we may need to just settimeout on socket
+         itself, which also may or may not have settimeout on it.
+
+        To avoid missing the correct one, we try both.
+        """
+        if hasattr(socket, "settimeout"):
+            socket.settimeout(None)
+        if hasattr(socket, "_sock") and hasattr(socket._sock, "settimeout"):
+            socket._sock.settimeout(None)
 
     def _get_result(self, container, stream, res):
         cont = self.inspect_container(container)
